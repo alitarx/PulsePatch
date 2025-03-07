@@ -219,21 +219,48 @@ class MainActivity : ComponentActivity() {
     }
 
 
+
+    //Buttersworth filter found online
     //Rpeaks
+    private fun applyBandpassFilter(ecgSignal: DoubleArray, fs: Double): DoubleArray {
+        val b = doubleArrayOf(0.00041655, 0.0, -0.0016662, 0.0, 0.0024993, 0.0, -0.0016662, 0.0, 0.00041655)
+        val a = doubleArrayOf(1.0, -7.0913, 21.9855, -39.7767, 45.4457, -32.1631, 13.5237, -2.9823, 0.2580)
+
+        val filteredSignal = DoubleArray(ecgSignal.size)
+
+        for (i in 8 until ecgSignal.size) {
+            filteredSignal[i] = b[0] * ecgSignal[i] +
+                    b[1] * ecgSignal[i - 1] +
+                    b[2] * ecgSignal[i - 2] +
+                    b[3] * ecgSignal[i - 3] +
+                    b[4] * ecgSignal[i - 4] +
+                    b[5] * ecgSignal[i - 5] +
+                    b[6] * ecgSignal[i - 6] +
+                    b[7] * ecgSignal[i - 7] +
+                    b[8] * ecgSignal[i - 8] -
+                    a[1] * filteredSignal[i - 1] -
+                    a[2] * filteredSignal[i - 2] -
+                    a[3] * filteredSignal[i - 3] -
+                    a[4] * filteredSignal[i - 4] -
+                    a[5] * filteredSignal[i - 5] -
+                    a[6] * filteredSignal[i - 6] -
+                    a[7] * filteredSignal[i - 7] -
+                    a[8] * filteredSignal[i - 8]
+        }
+
+        return filteredSignal
+    }
+
+
     private fun detectRPeaks(ecgSignal: DoubleArray, fs: Double): List<Int> {
-        // Compute differences between consecutive points
-        val diffSignal = (0 until ecgSignal.size - 1).map { i -> ecgSignal[i + 1] - ecgSignal[i] }
+        val filteredSignal = applyBandpassFilter(ecgSignal, fs)
 
-        // Square the differences
+        val diffSignal = (0 until filteredSignal.size - 1).map { i -> filteredSignal[i + 1] - filteredSignal[i] }
         val squaredSignal = diffSignal.map { it * it }
-
-        // Moving window integration
         val integratedSignal = squaredSignal.windowed(150, 1) { it.average() }
 
-        // Define threshold
         val threshold = integratedSignal.average() * 1.2
 
-        // Find peaks that exceed threshold
         return integratedSignal.indices.filter {
             it > 0 && it < integratedSignal.size - 1 &&
                     integratedSignal[it] > threshold &&
@@ -251,3 +278,4 @@ class MainActivity : ComponentActivity() {
 
     private fun Double.format(digits: Int) = String.format("%.${digits}f", this)
 }
+
