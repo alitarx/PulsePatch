@@ -23,7 +23,10 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import android.widget.Toast
+
 import java.util.*
+import kotlin.collections.windowed
 
 class MainActivity : ComponentActivity() {
     private lateinit var bluetoothAdapter: BluetoothAdapter
@@ -53,6 +56,7 @@ class MainActivity : ComponentActivity() {
 
         startScan()
         startBpmUpdater()
+
     }
 
     @Composable
@@ -188,6 +192,12 @@ class MainActivity : ComponentActivity() {
                 ecgBuffer.add(ecgValue.toDouble())
                 if (ecgBuffer.size > 1500) ecgBuffer.removeFirst()
             }
+            val filteredSignal = applyBandpassFilter(ecgBuffer.toDoubleArray(), sampleRate)
+            if(detectAFib(filteredSignal, fs = sampleRate)){
+                runOnUiThread {
+                    Toast.makeText(this, "Potential AFib detected", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -214,7 +224,6 @@ class MainActivity : ComponentActivity() {
 
             lastValidRR = if (rrIntervals.isNotEmpty()) rrIntervals.average() else lastValidRR
         }
-
         currentBpm = 60.0 / (lastValidRR ?: return)
     }
 
@@ -252,6 +261,7 @@ class MainActivity : ComponentActivity() {
     }
 
 
+
     private fun detectRPeaks(ecgSignal: DoubleArray, fs: Double): List<Int> {
         val filteredSignal = applyBandpassFilter(ecgSignal, fs)
 
@@ -268,8 +278,32 @@ class MainActivity : ComponentActivity() {
                     integratedSignal[it] > integratedSignal[it + 1]
         }
     }
+    private fun detectAFib(ecgSignal: DoubleArray, fs: Double): Boolean {
+        val rPeaks = detectRPeaks(ecgBuffer.toDoubleArray(), sampleRate)
+        val rrIntervals = rPeaks.windowed(2, 1) { it[1] - it[0] }
+            .map { it / sampleRate }
+            .filter { it in 0.4..1.5 }
 
+        val filteredSignal = applyBandpassFilter(ecgSignal, fs)
+        if (filteredSignal.size < 2) return false
+        //not enough data
 
+        // Thresholds for AFib detection (need to customize based on data)
+        val sdnnThreshold = 50.0 // in milliseconds
+        val rmssdThreshold = 50.0 // in milliseconds
+
+        //average RR
+        val meanRR = ecgSignal.average()
+
+        val sdnn = Math.sqrt(rrIntervals.map { (it - meanRR) * (it - meanRR) }.average())
+
+        val rmssd = Math.sqrt(
+            rrIntervals.windowed(2, 1).map {
+                if (it.size >= 2) (it[1] - it[0]) * (it[1] - it[0]) else 0.0
+            }.average()
+        )
+        return sdnn > sdnnThreshold || rmssd > rmssdThreshold
+    }
     private fun disconnect() {
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
@@ -277,5 +311,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun Double.format(digits: Int) = String.format("%.${digits}f", this)
+
 }
+
 
